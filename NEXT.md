@@ -22,6 +22,15 @@ The design doc selects shadcn/ui for visual primitives. The code uses Tailwind u
 elements (`details` for the filter menus, plain inputs and buttons). Decide whether to adopt shadcn/ui for
 the toolbar primitives or update §2.3 to record the native-element choice.
 
+### Hosting (§2.1, §4.4)
+
+Not decided. Long-lived SSE connections and the one-second producer loop do not fit serverless function
+limits. On Vercel a stream ends at the function's maximum duration (minutes), after which the client
+reconnects and fetches a snapshot, and the producer must run elsewhere. A Node host (Railway, Fly.io,
+Render, or a VPS running `next start`) runs the app and the producer as two services with no stream limit
+and allows an in-process rate limiter. A split deployment keeps a Vercel URL but inherits the reconnect
+gap and needs shared storage for rate limiting. Recommendation for the demo: a Node host running both.
+
 ## Not yet implemented
 
 ### Infinite-scroll cache budget and eviction (§7)
@@ -41,7 +50,9 @@ later page shows the footer Retry, which retries the same expired cursor.
 ### Rate limiting and body-size validation on the server (§5, §5.5)
 
 Routes validate projections, filters, sorting, and cursor integrity, but there is no request rate limit
-for queries, streams, or polling, and no explicit body-size limit on the JSON routes.
+for queries, streams, or polling, and no explicit body-size limit on the JSON routes. The limiter's
+storage depends on the hosting decision: in-process on a single Node host, shared (for example Upstash
+Redis) across serverless instances.
 
 ### Access scope (§5.6)
 

@@ -15,7 +15,7 @@
     "test": "vitest run",
     "storybook": "storybook dev -p 6006",
     "build-storybook": "storybook build",
-    "producer": "node --env-file=.env.local --import tsx scripts/producer.ts"
+    "producer": "node --env-file-if-exists=.env.local --import tsx scripts/producer.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.118.0",
