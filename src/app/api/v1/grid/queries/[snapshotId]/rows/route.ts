@@ -6,7 +6,7 @@ export async function GET(request: Request, context: { params: Promise<{ snapsho
     const { snapshotId } = await context.params;
     const cursor = new URL(request.url).searchParams.get("after");
 
-    return jsonResponse(getGridPage(snapshotId, cursor));
+    return jsonResponse(await getGridPage(snapshotId, cursor));
   } catch (error) {
     return errorResponse(error);
   }

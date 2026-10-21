@@ -4,7 +4,7 @@ import { getCurrentRows } from "@/server/grid-query";
 
 export async function POST(request: Request) {
   try {
-    const body: GridCurrentRowsResponse = { rows: getCurrentRows(await readJsonBody(request)) };
+    const body: GridCurrentRowsResponse = { rows: await getCurrentRows(await readJsonBody(request)) };
 
     return jsonResponse(body);
   } catch (error) {

@@ -1,28 +1,23 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 
-import { createMockBondRecords } from "@/mocks/bonds";
-
-import type { BondStore } from "./bond-store";
 import { GridError } from "./errors";
-import { clearSnapshotsForTesting, createGridQuery, getCurrentRows, getGridPage } from "./grid-query";
+import { createGridQuery, getCurrentRows, getGridPage } from "./grid-query";
+import { InMemoryBondStore } from "./in-memory-store";
+import type { SubscriptionRegistry } from "./subscriptions";
 
-const records = createMockBondRecords(250);
-const store: BondStore = {
-  list: () => records,
-  getByIds: (ids) => ids.flatMap((id) => records.filter((record) => record.id === id)),
-};
+const emptyRegistry: SubscriptionRegistry = { add: () => () => {}, subscribedIds: () => new Set(), size: () => 0 };
+const store = new InMemoryBondStore(emptyRegistry, 250);
+const records = store.list();
 
 describe("grid query service", () => {
-  beforeEach(() => clearSnapshotsForTesting());
-
-  it("pages through a stable snapshot without skipping or repeating rows", () => {
-    const first = createGridQuery({ sort: { field: "bid", direction: "desc" } }, store);
+  it("pages through a stable snapshot without skipping or repeating rows", async () => {
+    const first = await createGridQuery({ sort: { field: "bid", direction: "desc" } }, store);
     expect(first.rows).toHaveLength(100);
     expect(first.totalCount).toBe(250);
     expect(first.hasMore).toBe(true);
 
-    const second = getGridPage(first.snapshotId, first.nextCursor, store);
-    const third = getGridPage(second.snapshotId, second.nextCursor, store);
+    const second = await getGridPage(first.snapshotId, first.nextCursor, store);
+    const third = await getGridPage(second.snapshotId, second.nextCursor, store);
     const ids = [...first.rows, ...second.rows, ...third.rows].map((row) => row.id);
 
     expect(third.hasMore).toBe(false);
@@ -31,8 +26,8 @@ describe("grid query service", () => {
     expect(first.rows[0].bid).toBeGreaterThanOrEqual(first.rows[99].bid);
   });
 
-  it("filters by identifier prefix, sector, and rating", () => {
-    const page = createGridQuery(
+  it("filters by identifier prefix, sector, and rating", async () => {
+    const page = await createGridQuery(
       { filters: { cusip: "0000000", ticker: "0000000", sector: ["Muni", "corp"], creditRating: ["AAA"] } },
       store,
     );
@@ -43,19 +38,25 @@ describe("grid query service", () => {
     expect(page.filters).toEqual({ cusip: "0000000", ticker: "0000000", sector: ["Muni", "corp"], creditRating: ["AAA"] });
   });
 
-  it("rejects invalid projections, sorts, and tampered cursors", () => {
-    expect(() => createGridQuery({ fields: ["nope"] }, store)).toThrow(GridError);
-    expect(() => createGridQuery({ sort: { field: "creditRating", direction: "asc" } }, store)).toThrow(GridError);
+  it("projects only the requested fields", async () => {
+    const page = await createGridQuery({ fields: ["cusip", "bid"], pageSize: 1 }, store);
 
-    const page = createGridQuery({ pageSize: 10 }, store);
-    expect(() => getGridPage(page.snapshotId, `${page.nextCursor}x`, store)).toThrow(/signature/);
-    expect(() => getGridPage("missing", page.nextCursor, store)).toThrow(/expired/);
+    expect(Object.keys(page.rows[0]).sort()).toEqual(["bid", "cusip", "id", "updatedAt", "version"]);
   });
 
-  it("returns current rows for up to 50 ids", () => {
+  it("rejects invalid projections, sorts, and tampered cursors", async () => {
+    await expect(createGridQuery({ fields: ["nope"] }, store)).rejects.toThrow(GridError);
+    await expect(createGridQuery({ sort: { field: "creditRating", direction: "asc" } }, store)).rejects.toThrow(GridError);
+
+    const page = await createGridQuery({ pageSize: 10 }, store);
+    await expect(getGridPage(page.snapshotId, `${page.nextCursor}x`, store)).rejects.toThrow(/signature/);
+    await expect(getGridPage("missing", page.nextCursor, store)).rejects.toThrow(/expired/);
+  });
+
+  it("returns current rows for up to 50 ids", async () => {
     const ids = records.slice(0, 3).map((record) => record.id);
-    expect(getCurrentRows({ rowIds: ids }, store)).toHaveLength(3);
-    expect(() => getCurrentRows({ rowIds: [] }, store)).toThrow(GridError);
-    expect(() => getCurrentRows({ rowIds: records.slice(0, 51).map((record) => record.id) }, store)).toThrow(GridError);
+    await expect(getCurrentRows({ rowIds: ids }, store)).resolves.toHaveLength(3);
+    await expect(getCurrentRows({ rowIds: [] }, store)).rejects.toThrow(GridError);
+    await expect(getCurrentRows({ rowIds: records.slice(0, 51).map((record) => record.id) }, store)).rejects.toThrow(GridError);
   });
 });

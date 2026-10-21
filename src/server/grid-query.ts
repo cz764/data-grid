@@ -1,13 +1,6 @@
-import { createHash, randomUUID } from "node:crypto";
+import { createHash } from "node:crypto";
 
-import {
-  bondFields,
-  isBondField,
-  isBondSector,
-  isBondSortField,
-  type BondField,
-  type BondRecord,
-} from "@/data/bonds";
+import { bondFields, isBondField, isBondSector, isBondSortField, type BondField, type BondRecord } from "@/data/bonds";
 import {
   defaultGridSort,
   defaultPageSize,
@@ -16,46 +9,13 @@ import {
   type GridFilters,
   type GridPage,
   type GridQueryRequest,
-  type GridSort,
 } from "@/data/grid";
 
-import { getBondStore, type BondStore } from "./bond-store";
+import { getBondStore, type BondStore, type SnapshotInfo, type SnapshotQuery } from "./bond-store";
 import { decodeCursor, encodeCursor } from "./cursor";
 import { GridError } from "./errors";
 
-interface NormalizedQuery {
-  fields: readonly BondField[];
-  filters: GridFilters;
-  sort: GridSort;
-  pageSize: number;
-}
-
-interface Snapshot extends NormalizedQuery {
-  id: string;
-  queryFingerprint: string;
-  expiresAt: string;
-  orderedIds: readonly string[];
-}
-
 const snapshotLifetimeMs = 15 * 60 * 1000;
-const snapshotsKey = Symbol.for("bond-data-grid.snapshots");
-const globalSnapshots = globalThis as typeof globalThis & { [snapshotsKey]?: Map<string, Snapshot> };
-
-function getSnapshots() {
-  globalSnapshots[snapshotsKey] ??= new Map();
-
-  return globalSnapshots[snapshotsKey];
-}
-
-function purgeExpiredSnapshots(snapshots: Map<string, Snapshot>) {
-  const now = Date.now();
-
-  for (const [id, snapshot] of snapshots) {
-    if (new Date(snapshot.expiresAt).getTime() < now) {
-      snapshots.delete(id);
-    }
-  }
-}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -93,7 +53,7 @@ function normalizePrefix(value: unknown, name: string) {
   return trimmed ? trimmed : undefined;
 }
 
-export function normalizeQuery(input: unknown): NormalizedQuery {
+export function normalizeQuery(input: unknown): SnapshotQuery {
   if (!isRecord(input)) {
     throw new GridError(400, "INVALID_QUERY", "The query body must be an object.");
   }
@@ -161,44 +121,7 @@ export function normalizeQuery(input: unknown): NormalizedQuery {
   return { fields, filters, sort, pageSize };
 }
 
-function matchesFilters(record: BondRecord, filters: GridFilters) {
-  const cusip = filters.cusip?.toUpperCase();
-  const ticker = filters.ticker?.toUpperCase();
-
-  if (cusip || ticker) {
-    const identifierMatch =
-      (cusip !== undefined && record.cusip.toUpperCase().startsWith(cusip)) ||
-      (ticker !== undefined && record.ticker.toUpperCase().startsWith(ticker));
-
-    if (!identifierMatch) {
-      return false;
-    }
-  }
-
-  if (filters.sector && !filters.sector.includes(record.sector)) {
-    return false;
-  }
-
-  if (filters.creditRating && !filters.creditRating.includes(record.creditRating)) {
-    return false;
-  }
-
-  return true;
-}
-
-function compareRecords(sort: GridSort) {
-  const direction = sort.direction === "asc" ? 1 : -1;
-
-  return (left: BondRecord, right: BondRecord) => {
-    const a = left[sort.field];
-    const b = right[sort.field];
-    const order = typeof a === "number" && typeof b === "number" ? a - b : String(a).localeCompare(String(b));
-
-    return order !== 0 ? order * direction : left.id.localeCompare(right.id);
-  };
-}
-
-function fingerprint(query: NormalizedQuery) {
+function fingerprint(query: SnapshotQuery) {
   return createHash("sha256").update(JSON.stringify(query)).digest("base64url").slice(0, 24);
 }
 
@@ -212,22 +135,22 @@ function project(record: BondRecord, fields: readonly BondField[]): BondRecord {
   return projected;
 }
 
-function buildPage(snapshot: Snapshot, afterOrdinal: number, store: BondStore): GridPage {
-  const start = afterOrdinal + 1;
-  const ids = snapshot.orderedIds.slice(start, start + snapshot.pageSize);
-  const lastOrdinal = start + ids.length - 1;
-  const hasMore = lastOrdinal < snapshot.orderedIds.length - 1;
+async function buildPage(snapshot: SnapshotInfo, afterOrdinal: number, store: BondStore): Promise<GridPage> {
+  const { query } = snapshot;
+  const rows = await store.readSnapshotRows(snapshot.id, afterOrdinal, query.pageSize);
+  const lastOrdinal = afterOrdinal + rows.length;
+  const hasMore = lastOrdinal < snapshot.totalCount - 1;
 
   return {
     snapshotId: snapshot.id,
     queryFingerprint: snapshot.queryFingerprint,
     expiresAt: snapshot.expiresAt,
-    sort: snapshot.sort,
-    filters: snapshot.filters,
-    fields: snapshot.fields,
-    pageSize: snapshot.pageSize,
-    totalCount: snapshot.orderedIds.length,
-    rows: store.getByIds(ids).map((record) => project(record, snapshot.fields)),
+    sort: query.sort,
+    filters: query.filters,
+    fields: query.fields,
+    pageSize: query.pageSize,
+    totalCount: snapshot.totalCount,
+    rows: rows.map((record) => project(record, query.fields)),
     nextCursor: hasMore
       ? encodeCursor({
           snapshotId: snapshot.id,
@@ -240,37 +163,26 @@ function buildPage(snapshot: Snapshot, afterOrdinal: number, store: BondStore): 
   };
 }
 
-export function createGridQuery(input: unknown, store: BondStore = getBondStore()): GridPage {
+export async function createGridQuery(input: unknown, store: BondStore = getBondStore()): Promise<GridPage> {
   const query = normalizeQuery(input);
-  const orderedIds = store
-    .list()
-    .filter((record) => matchesFilters(record, query.filters))
-    .sort(compareRecords(query.sort))
-    .map((record) => record.id);
-  const snapshot: Snapshot = {
-    ...query,
-    id: randomUUID(),
-    queryFingerprint: fingerprint(query),
-    expiresAt: new Date(Date.now() + snapshotLifetimeMs).toISOString(),
-    orderedIds,
-  };
-
-  const snapshots = getSnapshots();
-  purgeExpiredSnapshots(snapshots);
-  snapshots.set(snapshot.id, snapshot);
+  const snapshot = await store.createSnapshot(query, fingerprint(query), snapshotLifetimeMs);
 
   return buildPage(snapshot, -1, store);
 }
 
-export function getGridPage(snapshotId: string, cursor: string | null, store: BondStore = getBondStore()): GridPage {
+export async function getGridPage(
+  snapshotId: string,
+  cursor: string | null,
+  store: BondStore = getBondStore(),
+): Promise<GridPage> {
   if (!cursor) {
     throw new GridError(400, "INVALID_CURSOR", "The after cursor is required.");
   }
 
   const payload = decodeCursor(cursor);
-  const snapshot = getSnapshots().get(snapshotId);
+  const snapshot = await store.getSnapshot(snapshotId);
 
-  if (!snapshot || new Date(snapshot.expiresAt).getTime() < Date.now()) {
+  if (!snapshot) {
     throw new GridError(410, "SNAPSHOT_EXPIRED", "The query snapshot has expired.");
   }
 
@@ -281,7 +193,7 @@ export function getGridPage(snapshotId: string, cursor: string | null, store: Bo
   return buildPage(snapshot, payload.ordinal, store);
 }
 
-export function getCurrentRows(input: unknown, store: BondStore = getBondStore()): BondRecord[] {
+export async function getCurrentRows(input: unknown, store: BondStore = getBondStore()): Promise<BondRecord[]> {
   if (!isRecord(input) || !Array.isArray(input.rowIds)) {
     throw new GridError(400, "INVALID_ROW_IDS", "rowIds must be an array of record IDs.");
   }
@@ -293,8 +205,4 @@ export function getCurrentRows(input: unknown, store: BondStore = getBondStore()
   }
 
   return store.getByIds(rowIds as string[]);
-}
-
-export function clearSnapshotsForTesting() {
-  getSnapshots().clear();
 }

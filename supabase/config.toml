@@ -1,0 +1,7 @@
+# Minimal Supabase CLI configuration. Link a hosted project with `supabase link --project-ref <ref>`,
+# then apply migrations and the seed with `supabase db push --include-seed`.
+project_id = "data-grid"
+
+[db.seed]
+enabled = true
+sql_paths = ["./seed.sql"]

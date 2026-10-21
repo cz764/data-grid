@@ -93,7 +93,7 @@ GraphQL can be reconsidered if clients later need different nested relationships
 
 Create an ordered snapshot of matching bond IDs when a query begins. Cursor pages traverse that immutable order, while the quote stream overlays the latest database values for the visible rows. Rows do not move while the user is reading them.
 
-Changing the sort creates a new snapshot, clears the discovered pages, returns to the top, and shows the loading skeleton. The alternative is to sort each requested page independently against current values, which can create duplicates or omissions when quotes change between requests, so it is excluded.
+Changing the sort creates a new snapshot, keeps the previous rows dimmed behind an "Updating rows" status until the first page arrives, then replaces them and returns to the top. The alternative is to sort each requested page independently against current values, which can create duplicates or omissions when quotes change between requests, so it is excluded.
 
 ## 3. High-level architecture
 
@@ -183,7 +183,7 @@ A starting snapshot lifetime of 15 minutes is sufficient for the demo. Expired s
 
 The producer runs independently of browser requests but follows the audience. Each second it updates every bond that any open stream subscribes to, plus a small background sample of unsubscribed bonds (initially 10 per second) so sorted orders still drift over time. Each update changes bid and ask together, preserves a valid spread, and is persisted to Supabase in one statement before the stream tier reads it.
 
-The stream tier tells the producer which IDs are subscribed. In the first implementation both run in the Next.js server process and share an in-memory subscription registry; the Supabase-backed version records subscriptions in a small `grid_subscriptions` table with a heartbeat so a separate producer process can read the hot set.
+The stream tier tells the producer which IDs are subscribed. With the in-memory store both run in the Next.js server process and share an in-memory subscription registry. With Supabase, each server process publishes its subscribed IDs to `grid_subscriptions` with a five-second heartbeat, and the producer (`scripts/producer.ts`) reads the union of IDs reported within the last 15 seconds through `subscribed_bond_ids()`, draws its background sample with `random_bond_ids()`, and writes through `apply_quote_updates()`. The stream tier learns of changes by reading the subscribed rows once per second and comparing versions.
 
 Batch the per-second updates when practical and measure database write latency. A producer restart resumes from the current database rows; durable quote history is outside the first version.
 
