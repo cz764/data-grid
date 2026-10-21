@@ -1,7 +1,7 @@
 # Reusable live data grid — design
 
 Date: October 21, 2026  
-Status: Finalized for the first implementation phase. Revised October 21, 2026 to replace viewport polling with Server-Sent Events (section 2.1).
+Status: Finalized for the first implementation phase. Revised October 21, 2026 to replace viewport polling with Server-Sent Events (section 2.2).
 
 ## 1. Purpose and scope
 
@@ -43,7 +43,13 @@ Initial exclusions are editing, selection, bulk actions, grouping, export, histo
 
 ## 2. Design decisions
 
-### 2.1 Database-backed mock updates pushed over Server-Sent Events
+### 2.1 Next.js
+
+Use Next.js as the application framework, chosen mainly for server-side rendering. The first page of bonds is fetched and rendered on the server, so the browser receives populated HTML instead of an empty shell followed by a client fetch, and the grid is readable before any JavaScript runs. The same framework also hosts the REST and Server-Sent Events route handlers, so one deployment serves both the UI and the browser-facing APIs.
+
+The alternative considered was a pure React single-page application with a Node.js and Express.js backend serving the API. With 50,000 or more records, a client-only app would show a loading state until its first fetch completed, and the Express server would require a separate setup, a second process to spin up, and its own deployment alongside the React app. Next.js server-side fetching keeps that first request next to the database inside one application and clearly wins for this dataset.
+
+### 2.2 Database-backed mock updates pushed over Server-Sent Events
 
 The mock producer is a separate backend process under our control. It generates valid bid/ask changes and writes them to Supabase. Supabase remains the only authority for both initial and current values, which avoids reconciliation between a database baseline and a separate in-memory stream.
 
@@ -63,7 +69,7 @@ The original first version used one-second polling of the visible IDs against a 
 
 Apply a pushed row only when its database `version` is newer than the displayed version. A reconnect replays nothing; the client requests the current rows once after reconnecting so a gap cannot leave stale quotes on screen.
 
-### 2.2 Hybrid infinite scroll with cursor pagination
+### 2.3 Hybrid infinite scroll with cursor pagination
 
 The initial request returns 100 records. Scrolling near the end automatically loads six additional pages. After that, one Load more button press loads one page at a time so the page footer remains reachable. Changing the sort or filters creates a new query and resets the automatic-load count.
 
@@ -71,7 +77,7 @@ Use an opaque cursor tied to a stable query snapshot. Offset pagination is exclu
 
 Row virtualization is independent of pagination: loaded records may remain in memory or cache while only viewport-adjacent rows are mounted.
 
-### 2.3 shadcn/ui and TanStack
+### 2.4 shadcn/ui and TanStack
 
 Use shadcn/ui for visual primitives, TanStack Table for table state, and TanStack Virtual for row virtualization.
 
@@ -83,13 +89,13 @@ shadcn/ui provides composable source code and styling rather than a complete hig
 
 **Custom HTML table.** A handwritten semantic table offers complete rendering control and no table-library conventions. It would also make this project responsible for all resizing, sorting state, virtualization integration, and accessibility behavior.
 
-### 2.4 REST API
+### 2.5 REST API
 
 Use REST with an allowlisted field projection. Different clients selecting different fields from the same flat bond schema do not require GraphQL.
 
 GraphQL can be reconsidered if clients later need different nested relationships, related entities, or an established GraphQL ecosystem.
 
-### 2.5 Sorting while values change
+### 2.6 Sorting while values change
 
 Create an ordered snapshot of matching bond IDs when a query begins. Cursor pages traverse that immutable order, while the quote stream overlays the latest database values for the visible rows. Rows do not move while the user is reading them.
 
