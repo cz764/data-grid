@@ -12,6 +12,9 @@
 .env*
 !.env.example
 
+# Supabase CLI scratch state
+/supabase/.temp
+
 # logs and editor files
 *.log
 .DS_Store

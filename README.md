@@ -30,7 +30,7 @@ src/
 ├── api/
 │   └── bonds.ts                 # browser fetch client for the grid endpoints
 ├── app/
-│   ├── api/v1/grid/             # route handlers: queries, cursor pages, current rows
+│   ├── api/v1/grid/             # route handlers: queries, cursor pages, current rows, quote stream
 │   ├── globals.css              # Tailwind import, theme tokens, shared utilities
 │   ├── layout.tsx
 │   ├── loading.tsx
@@ -39,7 +39,8 @@ src/
 ├── components/
 │   ├── BondGrid/                # page-level composition: query state, URL sync, polling
 │   │   ├── columns.tsx
-│   │   └── use-bond-query.ts
+│   │   ├── use-bond-query.ts
+│   │   └── use-quote-stream.ts  # SSE subscription for visible rows with polling fallback
 │   ├── BondLoader/              # Server Component that loads the first page
 │   ├── BondToolbar/             # search CUSIP or ticker, sector and rating filters
 │   ├── DataGrid/                # reusable grid: sorting, resizing, virtualization, keyboard
@@ -56,14 +57,19 @@ src/
     ├── bond-store.ts            # in-memory store with the mock quote producer
     ├── cursor.ts
     ├── errors.ts
-    └── grid-query.ts            # shared query service
+    ├── grid-query.ts            # shared query service
+    ├── quote-feed.ts            # subscribe to row IDs, receive conflated updates
+    ├── quote-stream.ts          # Server-Sent Events response
+    └── subscriptions.ts         # registry of subscribed row IDs
 ```
 
 Non-component directories and supporting files use lowercase names. Each React component uses a PascalCase directory matching the exported component name and keeps its implementation and tests together. Styling is Tailwind utilities in JSX; theme tokens live in `src/app/globals.css`.
 
 ## Data flow
 
-The Server Component calls the shared query service for the first page and passes it to `BondGrid`. The browser creates new queries and fetches further pages through `/api/v1/grid`, and polls the visible row IDs once per second. Until Supabase is seeded, the service runs against an in-memory store of 50,000 generated bonds with a producer that updates 50 quotes per second.
+The Server Component calls the shared query service for the first page and passes it to `BondGrid`. The browser creates new queries and fetches further pages through `/api/v1/grid`, and opens one Server-Sent Events stream for the row IDs in the viewport. On each connect it fetches a snapshot of those rows, then applies pushed `quotes` events whose version is newer than the displayed one. After three failed reconnects it falls back to one-second polling, and the grid eyebrow reads "polling". Until Supabase is seeded, the service runs against an in-memory store of 50,000 generated bonds whose producer updates every subscribed bond once per second plus a small background sample.
+
+Cells whose value changed since the row was last shown flash in the accent tint; pass `highlightChanges={false}` to disable it.
 
 ### DataGrid keyboard
 

@@ -160,6 +160,27 @@ describe("DataGrid", () => {
     expect(screen.queryByRole("button", { name: "Load more" })).not.toBeInTheDocument();
   });
 
+  it("flashes a cell whose value changed since it was last shown", () => {
+    const animate = vi.fn();
+    HTMLElement.prototype.animate = animate;
+    window.matchMedia = vi.fn().mockReturnValue({ matches: false });
+    const { rerender } = renderGrid();
+
+    expect(animate).not.toHaveBeenCalled();
+
+    rerender(
+      <DataGrid
+        name="Example records"
+        data={[{ ...rows[0], price: 11 }, rows[1]]}
+        columns={columns}
+        getRowId={(row) => row.id}
+      />,
+    );
+
+    expect(animate).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole("gridcell", { name: "11" })).toHaveAttribute("data-grid-column", "1");
+  });
+
   it("reports the visible row ids", () => {
     const onVisibleRowsChange = vi.fn();
     renderGrid({ onVisibleRowsChange });

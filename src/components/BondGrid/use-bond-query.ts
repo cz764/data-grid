@@ -1,19 +1,19 @@
 "use client";
 
 import { keepPreviousData, useInfiniteQuery, useQueryClient, type InfiniteData } from "@tanstack/react-query";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 
-import { createBondQuery, fetchBondPage, fetchCurrentBonds } from "@/api/bonds";
+import { createBondQuery, fetchBondPage } from "@/api/bonds";
 import type { BondRecord } from "@/data/bonds";
 import { toGridFilters, type BondGridQuery } from "@/data/bond-search-params";
 import { autoLoadPageLimit, type GridPage } from "@/data/grid";
+
+import { useQuoteStream } from "./use-quote-stream";
 
 interface PageCursor {
   snapshotId: string;
   cursor: string;
 }
-
-const pollIntervalMs = 1000;
 
 function isNewer(candidate: BondRecord, current: BondRecord) {
   return BigInt(candidate.version) > BigInt(current.version);
@@ -80,59 +80,42 @@ export function useBondQuery(query: BondGridQuery, initialPage?: GridPage) {
   const [visibleIds, setVisibleIds] = useState<readonly string[]>([]);
   const onVisibleRowsChange = useCallback((ids: Array<string | number>) => setVisibleIds(ids.map(String)), []);
 
-  useEffect(() => {
-    if (visibleIds.length === 0) {
-      return;
-    }
+  const applyRows = useCallback(
+    (rows: BondRecord[]) => {
+      const latest = new Map(rows.map((row) => [row.id, row]));
 
-    let controller: AbortController | null = null;
-    const poll = async () => {
-      controller?.abort();
-      controller = new AbortController();
+      queryClient.setQueryData<InfiniteData<GridPage, PageCursor | null>>(queryKey, (data) => {
+        if (!data) {
+          return data;
+        }
 
-      try {
-        const rows = await fetchCurrentBonds(visibleIds, controller.signal);
-        const latest = new Map(rows.map((row) => [row.id, row]));
+        let changed = false;
+        const pages = data.pages.map((page) => {
+          let pageChanged = false;
+          const nextRows = page.rows.map((row) => {
+            const candidate = latest.get(row.id);
 
-        queryClient.setQueryData<InfiniteData<GridPage, PageCursor | null>>(queryKey, (data) => {
-          if (!data) {
-            return data;
-          }
+            if (candidate && isNewer(candidate, row)) {
+              pageChanged = true;
 
-          let changed = false;
-          const pages = data.pages.map((page) => {
-            let pageChanged = false;
-            const nextRows = page.rows.map((row) => {
-              const candidate = latest.get(row.id);
+              return { ...row, ...candidate };
+            }
 
-              if (candidate && isNewer(candidate, row)) {
-                pageChanged = true;
-
-                return { ...row, ...candidate };
-              }
-
-              return row;
-            });
-
-            changed ||= pageChanged;
-
-            return pageChanged ? { ...page, rows: nextRows } : page;
+            return row;
           });
 
-          return changed ? { ...data, pages } : data;
+          changed ||= pageChanged;
+
+          return pageChanged ? { ...page, rows: nextRows } : page;
         });
-      } catch {
-        // A failed or cancelled poll is retried on the next interval.
-      }
-    };
 
-    const interval = setInterval(() => void poll(), pollIntervalMs);
+        return changed ? { ...data, pages } : data;
+      });
+    },
+    [queryClient, queryKey],
+  );
 
-    return () => {
-      clearInterval(interval);
-      controller?.abort();
-    };
-  }, [visibleIds, queryClient, queryKey]);
+  const transport = useQuoteStream(visibleIds, applyRows);
 
   const rows = useMemo(() => result.data?.pages.flatMap((page) => page.rows) ?? [], [result.data]);
   const totalCount = result.data?.pages[0]?.totalCount;
@@ -148,5 +131,6 @@ export function useBondQuery(query: BondGridQuery, initialPage?: GridPage) {
     loadMore,
     retry,
     onVisibleRowsChange,
+    transport,
   };
 }

@@ -47,7 +47,7 @@ export function BondGrid({ initialQuery, initialPage, name = "Bond market watch"
       id="bond-grid"
       className="min-h-0 flex-1"
       name={name}
-      eyebrow="Live bond inventory"
+      eyebrow={bonds.transport === "stream" ? "Live bond inventory" : "Bond inventory · polling"}
       toolbar={<BondToolbar query={query} onQueryChange={updateQuery} />}
       data={bonds.rows}
       columns={bondColumns}

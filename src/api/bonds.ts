@@ -54,3 +54,28 @@ export async function fetchCurrentBonds(rowIds: readonly string[], signal?: Abor
 
   return body.rows;
 }
+
+export interface BondStreamHandlers {
+  onOpen: () => void;
+  onQuotes: (rows: BondRecord[]) => void;
+  onError: () => void;
+}
+
+export function supportsBondStream() {
+  return typeof EventSource !== "undefined";
+}
+
+export function openBondStream(rowIds: readonly string[], handlers: BondStreamHandlers) {
+  const params = new URLSearchParams({ ids: rowIds.join(",") });
+  const source = new EventSource(`${basePath}/rows/stream?${params}`);
+
+  source.onopen = handlers.onOpen;
+  source.onerror = handlers.onError;
+  source.addEventListener("quotes", (event) => {
+    const body = JSON.parse((event as MessageEvent<string>).data) as GridCurrentRowsResponse;
+
+    handlers.onQuotes(body.rows);
+  });
+
+  return () => source.close();
+}

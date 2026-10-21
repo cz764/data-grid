@@ -1,7 +1,7 @@
 # Reusable live data grid — design
 
 Date: October 21, 2026  
-Status: Finalized for the first implementation phase.
+Status: Finalized for the first implementation phase. Revised October 21, 2026 to replace viewport polling with Server-Sent Events (section 2.1).
 
 ## 1. Purpose and scope
 
@@ -15,9 +15,9 @@ The database may contain **50,000** or more records, while the browser loads onl
 - **One flat bond schema.** Each bond contains `id`, `isin`, `cusip`, `ticker`, `issuer`, `sector`, `creditRating`, `maturity`, `bid`, and `ask`. Nested fields and arrays are deferred.
 - **Ratings are display strings.** Values such as `AA` and `A+` do not identify Moody's, S&P, or another agency. Agency-aware rating objects and semantic rating sorting are deferred.
 - **Complete synthetic records.** Seeded bonds contain every agreed field. Nullability and real identifier checksum validation are outside the first version.
-- **Supabase is the source of truth.** A separate mock producer updates quote values directly in Supabase. Initial page requests, pagination, sorting, filtering, and update polling all read the same current database state through Next.js.
-- **The producer is independent of clients.** It updates 50 bond records per second globally. It changes `bid` and `ask` together, preserves descriptive fields, and maintains `ask >= bid`. It does not insert or delete bonds.
-- **Viewport polling.** The browser polls once per second for the current values of up to 50 displayed bond IDs. One response can contain approximately 50 complete bond records.
+- **Supabase is the source of truth.** A separate mock producer updates quote values directly in Supabase. Initial page requests, pagination, sorting, filtering, and quote updates all read the same current database state through Next.js.
+- **The producer follows the audience.** It updates every subscribed bond once per second and a small background share of the rest of the dataset. It changes `bid` and `ask` together, preserves descriptive fields, and maintains `ask >= bid`. It does not insert or delete bonds. Every update is persisted before it is pushed.
+- **Viewport subscription.** The browser subscribes to the current values of up to 50 displayed bond IDs over one Server-Sent Events stream and receives at most one conflated update per bond per second. The current-rows endpoint remains for the initial snapshot and as a polling fallback.
 - **Maturity is a calendar date.** Store it as a Postgres `date` and transport it as `YYYY-MM-DD`.
 - **Shared schema, different views.** Clients use the same bond shape but may request and display different fields.
 - **Mobile-first layout.** The grid must work from a 320px-wide viewport upward.
@@ -28,8 +28,8 @@ The database may contain **50,000** or more records, while the browser loads onl
 | Requirement          | First-version behavior                                                      |
 | -------------------- | --------------------------------------------------------------------------- |
 | Dataset              | Seed 50,000 bonds; consider 100,000 only as a later benchmark.              |
-| Updates              | Producer writes 50 complete quote updates per second to Supabase.           |
-| Client freshness     | Poll the current visible IDs once per second through Next.js.               |
+| Updates              | Producer writes one quote update per second for each subscribed bond, plus a low background rate, to Supabase. |
+| Client freshness     | Subscribe to the visible IDs over SSE through Next.js; conflate to one event per bond per second. |
 | Public grid contract | Generic `data`, `columns`, identity, state, and callback props.             |
 | Pagination           | Cursor pagination with 100 records per page.                                |
 | Infinite scroll      | Load six additional pages automatically, then require the Load more button. |
@@ -43,20 +43,25 @@ Initial exclusions are editing, selection, bulk actions, grouping, export, histo
 
 ## 2. Design decisions
 
-### 2.1 Database-backed mock updates with client polling
+### 2.1 Database-backed mock updates pushed over Server-Sent Events
 
-The mock producer is a separate backend process under our control. It selects bonds, generates valid bid/ask changes, and writes those changes directly to Supabase at a global rate of 50 records per second.
+The mock producer is a separate backend process under our control. It generates valid bid/ask changes and writes them to Supabase. Supabase remains the only authority for both initial and current values, which avoids reconciliation between a database baseline and a separate in-memory stream.
 
-The Next.js application owns all browser-facing APIs. The browser sends the IDs currently displayed in the viewport to a polling endpoint once per second and receives their latest complete database rows. Supabase remains the only authority for both initial and current values, which avoids reconciliation between a database baseline and a separate in-memory stream.
+The Next.js application owns all browser-facing APIs. The browser opens one Server-Sent Events stream for the bond IDs currently displayed in the viewport. When the viewport changes, the browser closes the stream and opens a new one for the new ID set; up to 50 IDs fit in the request URL. The server emits the latest persisted row for each subscribed bond at most once per second (conflation), so a bond that changed several times within a second produces one event carrying its current state.
 
-| Option                         | Decision | Trade-off                                                                                              |
-| ------------------------------ | -------- | ------------------------------------------------------------------------------------------------------ |
-| Client polling through Next.js | Selected | Simple lifecycle and one data authority; creates regular database reads.                               |
-| Supabase Realtime              | Deferred | Removes explicit polling but adds subscription and fan-out behavior that the first demo does not need. |
-| Server-Sent Events             | Deferred | Efficient one-way delivery but requires a persistent subscription service and separate recovery rules. |
-| WebSocket                      | Deferred | Supports two-way communication that read-only cells do not require.                                    |
+This mirrors how consumer quote pages such as Yahoo Finance work: the client subscribes to the symbols on screen, the server conflates the upstream feed to roughly one update per symbol per second, and the pushed value is the same one a reload would fetch.
 
-Polling requests must not overlap indefinitely. Cancel an obsolete request when possible and apply a returned row only when its database `version` is newer than the displayed version.
+The original first version used one-second polling of the visible IDs against a producer that updated 50 random rows per second across the whole dataset. That design was correct but unobservable: with 25 rows on screen, a visible row changed about once every 40 seconds. Producer updates are now concentrated on subscribed rows (section 4.4) so every displayed quote moves each second while the rest of the dataset drifts slowly.
+
+| Option                                | Decision | Trade-off                                                                                                                                 |
+| ------------------------------------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| Server-Sent Events through Next.js    | Selected | One-way push over plain HTTP; `EventSource` reconnects automatically; a Next.js route handler can return a streaming response. Long-lived connections are capped on serverless hosts, so the client must tolerate reconnects. |
+| Client polling through Next.js        | Fallback | Simple lifecycle and already implemented; kept for the first snapshot and when `EventSource` is unavailable or the stream fails repeatedly. |
+| Client-side simulator                 | Rejected | Invents values the database never had, so scrolling, sorting, and reloading disagree with what was displayed. Reintroduces the two-sources-of-truth problem. |
+| Supabase Realtime                     | Deferred | Would replace the producer-to-server hop but adds subscription fan-out the demo does not need yet.                                        |
+| WebSocket                             | Deferred | Supports two-way communication that read-only cells do not require, and Next.js route handlers cannot upgrade connections without a custom server. |
+
+Apply a pushed row only when its database `version` is newer than the displayed version. A reconnect replays nothing; the client requests the current rows once after reconnecting so a gap cannot leave stale quotes on screen.
 
 ### 2.2 Hybrid infinite scroll with cursor pagination
 
@@ -86,7 +91,7 @@ GraphQL can be reconsidered if clients later need different nested relationships
 
 ### 2.5 Sorting while values change
 
-Create an ordered snapshot of matching bond IDs when a query begins. Cursor pages traverse that immutable order, while the once-per-second viewport poll overlays the latest database values. Rows do not move while the user is reading them.
+Create an ordered snapshot of matching bond IDs when a query begins. Cursor pages traverse that immutable order, while the quote stream overlays the latest database values for the visible rows. Rows do not move while the user is reading them.
 
 Changing the sort creates a new snapshot, clears the discovered pages, returns to the top, and shows the loading skeleton. The alternative is to sort each requested page independently against current values, which can create duplicates or omissions when quotes change between requests, so it is excluded.
 
@@ -94,14 +99,16 @@ Changing the sort creates a new snapshot, clears the discovered pages, returns t
 
 ```mermaid
 flowchart TD
-    Producer["Mock quote producer"] -->|"50 row updates/second"| DB[("Supabase Postgres")]
+    Producer["Mock quote producer"] -->|"1 update/second per subscribed row"| DB[("Supabase Postgres")]
+    API -->|"subscribed IDs"| Producer
     Page["Next.js Server Component"] --> Query["Shared query service"]
     Query --> DB
     Page -->|"SSR first page"| View["Grid page composition"]
     View --> State["Page-level React state"]
     State -->|"data, columns, states, callbacks"| Grid["Reusable DataGrid"]
     Grid -->|"sort, filters, load more, visible IDs"| State
-    State -->|"cursor pages and visible-row polls"| API["Next.js Route Handlers"]
+    State -->|"cursor pages"| API["Next.js Route Handlers"]
+    API -->|"SSE quote events for visible IDs"| State
     API --> Query
 ```
 
@@ -110,9 +117,9 @@ flowchart TD
 #### Backend
 
 - **Next.js Server Component:** reads the first page through the shared query service and renders the Suspense fallback while it loads.
-- **Next.js Route Handlers:** own the browser-facing query, pagination, filtering, sorting, and current-row polling endpoints.
+- **Next.js Route Handlers:** own the browser-facing query, pagination, filtering, sorting, current-row, and quote-stream endpoints.
 - **Shared query service:** validates inputs and performs Supabase reads without requiring the Server Component to call its own HTTP endpoint.
-- **Mock producer:** changes 50 valid bond quotes per second and persists each change to Supabase.
+- **Mock producer:** changes every subscribed bond quote once per second, plus a low background rate across the dataset, and persists each change to Supabase before it is pushed.
 
 #### Database
 
@@ -120,8 +127,8 @@ flowchart TD
 
 #### Frontend
 
-- **Page-level React state:** a page-specific hook or component owns fetched pages, the current sort and filters, the one-second polling interval, and loading/error state. Use Context only if the toolbar and grid become distant descendants that otherwise require excessive prop passing.
-- **DataGrid:** renders the supplied rows and owns grid-local behavior such as focus, column widths, sticky positioning, and virtualization. It has no Supabase or Next.js dependency.
+- **Page-level React state:** a page-specific hook or component owns fetched pages, the current sort and filters, the quote stream subscription for the visible IDs, and loading/error state. Use Context only if the toolbar and grid become distant descendants that otherwise require excessive prop passing.
+- **DataGrid:** renders the supplied rows and owns grid-local behavior such as focus, column widths, sticky positioning, virtualization, and a brief flash on cells whose value changed since the row was last shown. It has no Supabase or Next.js dependency.
 - **Toolbar:** provides the text input with placeholder “search CUSIP or ticker” and optional sector and rating filters. Filter state is reflected in the URL query string and sent to the backend.
 
 ## 4. Data model
@@ -156,7 +163,7 @@ Supabase owns the current row and its synchronization metadata.
 | `version`    | `bigint`      | Incremented atomically whenever the producer updates a bond. |
 | `updated_at` | `timestamptz` | Records when the producer committed the current quote.       |
 
-The API exposes these as `version` and `updatedAt`, serializing the bigint version as a decimal string. The grid component does not interpret them; the page-level polling logic compares versions numerically and rejects an older overlapping response. A producer update changes bid, ask, version, and updated_at in one database statement.
+The API exposes these as `version` and `updatedAt`, serializing the bigint version as a decimal string. The grid component does not interpret them; the page-level stream and polling logic compares versions numerically and rejects an older or duplicate event. A producer update changes bid, ask, version, and updated_at in one database statement.
 
 Start with indexes on `id`, `cusip`, `ticker`, and `(ticker, id)`. Add indexes for demonstrated filter and sort combinations after inspecting actual query plans.
 
@@ -174,9 +181,11 @@ A starting snapshot lifetime of 15 minutes is sufficient for the demo. Expired s
 
 ### 4.4 Mock quote producer
 
-The producer runs independently of browser requests. It selects 50 existing bonds each second and updates their bid and ask values in Supabase, preserving a valid spread. It does not keep a competing canonical row map, serve browser traffic, or manage subscriptions.
+The producer runs independently of browser requests but follows the audience. Each second it updates every bond that any open stream subscribes to, plus a small background sample of unsubscribed bonds (initially 10 per second) so sorted orders still drift over time. Each update changes bid and ask together, preserves a valid spread, and is persisted to Supabase in one statement before the stream tier reads it.
 
-Batch the 50 updates when practical and measure database write latency. A producer restart resumes from the current database rows; durable quote history is outside the first version.
+The stream tier tells the producer which IDs are subscribed. In the first implementation both run in the Next.js server process and share an in-memory subscription registry; the Supabase-backed version records subscriptions in a small `grid_subscriptions` table with a heartbeat so a separate producer process can read the hot set.
+
+Batch the per-second updates when practical and measure database write latency. A producer restart resumes from the current database rows; durable quote history is outside the first version.
 
 ## 5. API contract
 
@@ -273,7 +282,7 @@ The rows array is shortened. Default order is `ticker asc, id asc`; default page
 
 Return the same page envelope with the next 100 rows. Validate the signed cursor and query scope. A missing, modified, or expired cursor returns a structured error instead of silently starting another order.
 
-### 5.3 Poll current visible rows
+### 5.3 Fetch current visible rows
 
 `POST /api/v1/grid/rows/current`
 
@@ -286,25 +295,41 @@ Return the same page envelope with the next 100 rows. Validate the signed cursor
 }
 ```
 
-Accept 1–50 distinct IDs and return each complete current bond record, including `version` and `updatedAt`, regardless of the visible column set. The browser calls this endpoint once per second for the actual displayed rows. A viewport change replaces the next poll's ID set; no subscription resource is created.
+Accept 1–50 distinct IDs and return each complete current bond record, including `version` and `updatedAt`, regardless of the visible column set. The browser calls this endpoint once when a stream connects or reconnects, and once per second as a fallback when `EventSource` is unavailable.
 
-### 5.4 Error semantics
+### 5.4 Subscribe to visible rows
+
+`GET /api/v1/grid/rows/stream?ids={id1},{id2},...`
+
+Accept 1–50 distinct IDs and respond with `Content-Type: text/event-stream`, `Cache-Control: private, no-store`, and `Connection: keep-alive`. The stream emits:
+
+```text
+event: quotes
+id: 1729519200-7
+data: {"rows":[{"id":"b0a00000-0000-4000-8000-000000000042","bid":99.125,"ask":99.175,"version":"20","updatedAt":"2026-10-21T14:00:01.004Z"}]}
+
+: heartbeat
+```
+
+One `quotes` event per second carries every subscribed bond that changed in that second, with its complete current record. Rows that did not change are omitted. A comment heartbeat is sent every 15 seconds so proxies keep the connection open. A viewport change replaces the subscription by closing the stream and opening a new one. The server releases the subscription when the request is aborted, and the hot set drops IDs that no open stream references.
+
+### 5.5 Error semantics
 
 Use the envelope `{ "error": { "code": "...", "message": "...", "retryable": true }, "requestId": "..." }`.
 
 | Status        | Example                                                            | Client behavior                                                                             |
 | ------------- | ------------------------------------------------------------------ | ------------------------------------------------------------------------------------------- |
-| 400           | Invalid projection, filter, sort, cursor, or more than 50 poll IDs | Show the configuration or input error.                                                      |
+| 400           | Invalid projection, filter, sort, cursor, or more than 50 row IDs | Show the configuration or input error.                                                      |
 | 401 / 403     | Missing session or denied access                                   | Stop requests and show the access state.                                                    |
 | 410           | `SNAPSHOT_EXPIRED`                                                 | Keep displayed rows and require a new query.                                                |
-| 429           | Query or polling rate exceeded                                     | Respect `Retry-After` and retain existing rows.                                             |
-| 503 / network | Database or route temporarily unavailable                          | Retain existing rows and offer Retry for page failures; try the next scheduled update poll. |
+| 429           | Query, stream, or polling rate exceeded                                     | Respect `Retry-After` and retain existing rows.                                             |
+| 503 / network | Database or route temporarily unavailable                          | Retain existing rows and offer Retry for page failures; `EventSource` reconnects on its own, and after three failed reconnects the client falls back to one-second polling. |
 
-### 5.5 Data access
+### 5.6 Data access
 
 Server Components and Route Handlers use server-side Supabase credentials with the narrowest required role. The browser never receives a service-role key and does not query Supabase directly.
 
-The public synthetic demo may use a restricted anonymous session. Apply the same effective access scope to query creation, later pages, and visible-row polling. If tenants are introduced, derive tenant scope from verified identity and enforce Row Level Security. [Supabase RLS guidance](https://supabase.com/docs/guides/database/postgres/row-level-security)
+The public synthetic demo may use a restricted anonymous session. Apply the same effective access scope to query creation, later pages, current-row fetches, and the quote stream. If tenants are introduced, derive tenant scope from verified identity and enforce Row Level Security. [Supabase RLS guidance](https://supabase.com/docs/guides/database/postgres/row-level-security)
 
 ## 6. Component developer documentation
 
@@ -392,6 +417,8 @@ Do not intercept these keys while the user is operating an embedded control. Exp
 | Initial loading      | Named skeleton region with a busy state.              |
 | Empty result         | Clear empty message with no loading sentinel.         |
 | Initial failure      | Error message and Retry action.                       |
+| Query change         | Keep previous rows dimmed with an "Updating rows" status, then replace them and return to the top. |
+| Quote update         | Flash the changed cell in the accent tint for under one second; no row movement. |
 | Loading another page | Keep existing rows and show footer progress.          |
 | Later-page failure   | Keep existing rows and show Retry at the same cursor. |
 | No more rows         | End-of-results footer.                                |
@@ -408,8 +435,8 @@ These are proposed acceptance checks and performance targets rather than benchma
 
 | Area                | Evidence to collect                                                                                                                    |
 | ------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| Producer throughput | Sustain 50 valid Supabase bond updates per second and record database write latency.                                                   |
-| Poll freshness      | Poll up to 50 visible rows once per second and measure producer commit-to-display latency; target p95 below two seconds.               |
+| Producer throughput | Sustain one valid Supabase update per second for 50 subscribed bonds plus the background rate, and record database write latency.     |
+| Push freshness      | Stream up to 50 visible rows and measure producer commit-to-display latency; target p95 below 1.5 seconds. Verify reconnect fetches a snapshot and that polling fallback engages after repeated stream failures. |
 | Virtualization      | Mounted rows follow viewport plus overscan rather than loaded or total row count.                                                      |
 | Memory              | Traverse the dataset while the resident page cache remains near its configured budget.                                                 |
 | Responsiveness      | Target smooth scrolling and no sustained update-driven tasks over 50ms on the reference desktop; profile a mobile viewport separately. |
@@ -420,4 +447,4 @@ These are proposed acceptance checks and performance targets rather than benchma
 | Bond schema         | Validate UUIDs, identifier lengths, sector values, maturity dates, rating strings, numeric precision, and valid spreads.               |
 | Storybook           | Build without Supabase credentials and render the fixture, empty, narrow, and loading stories.                                         |
 
-Record dataset size, page size, visible and mounted row counts, browser/device, build mode, polling interval, and database latency with each performance result.
+Record dataset size, page size, visible and mounted row counts, browser/device, build mode, stream conflation interval, and database latency with each performance result.

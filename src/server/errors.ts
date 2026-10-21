@@ -23,6 +23,10 @@ export function jsonResponse<T>(body: T, init?: ResponseInit) {
 }
 
 export function errorResponse(error: unknown) {
+  if (!(error instanceof GridError)) {
+    console.error("Unhandled grid request error", error);
+  }
+
   const gridError =
     error instanceof GridError
       ? error

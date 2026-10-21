@@ -65,6 +65,7 @@ export interface DataGridProps<T extends object> {
   onLoadMore?: () => void;
   onRetry?: () => void;
   onVisibleRowsChange?: (rowIds: RowIdentity[]) => void;
+  highlightChanges?: boolean;
   rowHeight?: number;
   className?: string;
   style?: CSSProperties;
@@ -82,6 +83,20 @@ const overscan = 10;
 const autoLoadThreshold = 20;
 const keyboardResizeStep = 10;
 const defaultWidth = 150;
+const flashDurationMs = 900;
+
+function flashCell(element: HTMLElement) {
+  if (typeof element.animate !== "function" || window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    return;
+  }
+
+  const accent = getComputedStyle(element).getPropertyValue("--color-accent").trim() || "#255be3";
+
+  element.animate(
+    [{ backgroundColor: `color-mix(in srgb, ${accent} 24%, transparent)` }, { backgroundColor: "transparent" }],
+    { duration: flashDurationMs, easing: "ease-out" },
+  );
+}
 
 const alignClass = { start: "text-left", center: "text-center", end: "text-right tabular-nums" } as const;
 const cellBase =
@@ -124,6 +139,7 @@ export function DataGrid<T extends object>({
   onLoadMore,
   onRetry,
   onVisibleRowsChange,
+  highlightChanges = true,
   rowHeight = 44,
   className,
   style,
@@ -218,6 +234,44 @@ export function DataGrid<T extends object>({
       onLoadMore();
     }
   }, [autoLoadMore, hasMore, isLoading, isRefreshing, error, rows.length, lastMounted, onLoadMore]);
+
+  const lastSeenValues = useRef(new Map<string, Record<string, unknown>>());
+
+  useEffect(() => {
+    const seen = lastSeenValues.current;
+    const mountedIds = new Set<string>();
+
+    for (const virtualRow of virtualRows) {
+      const row = rows[virtualRow.index];
+      const previous = seen.get(row.id);
+      const current: Record<string, unknown> = {};
+
+      mountedIds.add(row.id);
+      columns.forEach((column, columnIndex) => {
+        const value = row.original[column.key];
+        current[column.key] = value;
+
+        if (highlightChanges && previous && !Object.is(previous[column.key], value)) {
+          const cell = viewportRef.current?.querySelector<HTMLElement>(
+            `[data-grid-row="${virtualRow.index}"][data-grid-column="${columnIndex}"]`,
+          );
+
+          if (cell) {
+            flashCell(cell);
+          }
+        }
+      });
+      seen.set(row.id, current);
+    }
+
+    const loadedIds = new Set(rows.map((row) => row.id));
+
+    for (const id of seen.keys()) {
+      if (!loadedIds.has(id)) {
+        seen.delete(id);
+      }
+    }
+  }, [rows, virtualRows, columns, highlightChanges]);
 
   const wasRefreshing = useRef(isRefreshing);
 
