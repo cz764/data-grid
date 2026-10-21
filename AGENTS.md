@@ -1,0 +1,9 @@
+- Prefer Next.js Suspense boundary and loader skeleton.
+- Prefer server component.
+- Prefer minimal comments, code should be self explain. Only add comments if the logic need clarify for others.
+- Leave visual validation and starting local server to me, unless asked to.
+- Do not auto commit or push to git, unless asked to.
+- Use lowercase names for non-component directories and supporting files.
+- Use PascalCase for React component names and their leaf directories. The component name and directory name must match exactly.
+- Give every reusable component under `src/components` its own directory with `index.tsx` and `ComponentName.test.tsx`. Keep supporting files inside that directory lowercase, such as `columns.tsx`. Next.js route files keep their framework-defined names.
+- Style with Tailwind utility classes in JSX. Theme tokens live in `src/app/globals.css` under `@theme`. Add a `ComponentName.css` only when Tailwind cannot express the rule or when grouping utilities with `@apply` keeps a repeated class list readable; prefer a shared `@utility` in `globals.css` for cross-component patterns.

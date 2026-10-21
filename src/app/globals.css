@@ -1,0 +1,66 @@
+@import "tailwindcss";
+
+@theme {
+  /* Monochrome palette derived from rgb(37 91 227). */
+  --color-canvas: #eef2fb;
+  --color-surface: #fcfdff;
+  --color-surface-strong: #f4f7fe;
+  --color-ink: #121b3a;
+  --color-muted: #6b779d;
+  --color-muted-strong: #4a5783;
+  --color-accent: #255be3;
+  --color-accent-strong: #1b47b6;
+  --color-accent-soft: #9db4f2;
+  --color-border: #d3dbf1;
+  --color-border-subtle: #e4e9f7;
+  --color-row-hover: #edf2fe;
+  --color-skeleton: #e2e8f6;
+  --color-skeleton-highlight: #f1f4fc;
+  /* Secondary color for small emphasis only, such as badge counters. */
+  --color-emphasis: #f13c29;
+  --font-sans: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --animate-shimmer: shimmer 1.4s infinite linear;
+
+  @keyframes shimmer {
+    from {
+      background-position: 200% 0;
+    }
+    to {
+      background-position: -200% 0;
+    }
+  }
+}
+
+@layer base {
+  html {
+    color-scheme: light;
+    background: var(--color-canvas);
+  }
+
+  body {
+    min-width: 320px;
+    min-height: 100dvh;
+    margin: 0;
+    background:
+      radial-gradient(circle at 12% 4%, rgb(37 91 227 / 10%), transparent 32rem),
+      var(--color-canvas);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+  }
+}
+
+@utility skeleton-bar {
+  display: block;
+  background: linear-gradient(
+    90deg,
+    var(--color-skeleton) 25%,
+    var(--color-skeleton-highlight) 50%,
+    var(--color-skeleton) 75%
+  );
+  background-size: 200% 100%;
+  animation: var(--animate-shimmer);
+
+  @media (prefers-reduced-motion: reduce) {
+    animation: none;
+  }
+}
