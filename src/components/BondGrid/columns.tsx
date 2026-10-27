@@ -14,8 +14,8 @@ const dateFormatter = new Intl.DateTimeFormat("en-US", {
 });
 
 export const bondColumns: readonly DataGridColumn<BondRecord>[] = [
-  { key: "cusip", title: "CUSIP", width: 90, minWidth: 80, sortable: true },
-  { key: "ticker", title: "Ticker", width: 90, minWidth: 80, sortable: true },
+  { key: "cusip", title: "CUSIP", width: 124, minWidth: 112, sortable: true },
+  { key: "ticker", title: "Ticker", width: 112, minWidth: 100, sortable: true },
   {
     key: "issuer",
     title: "Issuer",

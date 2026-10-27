@@ -228,7 +228,7 @@ Next.js is the only browser-facing API owner. All routes use the `/api/v1/grid` 
 }
 ```
 
-`cusip` and `ticker` are optional case-insensitive prefix filters. When both are populated, a record may match either identifier; the toolbar can therefore send its single search value to both fields. Values within the sector and rating arrays use OR semantics, while the identifier, sector, and rating groups combine with AND. Empty values are omitted during normalization.
+`cusip` and `ticker` are optional case-insensitive substring filters that match anywhere in the identifier. When both are populated, a record may match either identifier; the toolbar can therefore send its single search value to both fields. Values within the sector and rating arrays use OR semantics, while the identifier, sector, and rating groups combine with AND. Empty values are omitted during normalization.
 
 Example response:
 

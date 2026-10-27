@@ -26,16 +26,17 @@ describe("grid query service", () => {
     expect(first.rows[0].bid).toBeGreaterThanOrEqual(first.rows[99].bid);
   });
 
-  it("filters by identifier prefix, sector, and rating", async () => {
+  it("filters by identifier substring, sector, and rating", async () => {
     const page = await createGridQuery(
-      { filters: { cusip: "0000000", ticker: "0000000", sector: ["Muni", "corp"], creditRating: ["AAA"] } },
+      { filters: { cusip: "001", ticker: "001", sector: ["Muni", "corp"], creditRating: ["AAA"] } },
       store,
     );
 
     expect(page.rows.length).toBeGreaterThan(0);
-    expect(page.rows.every((row) => row.cusip.startsWith("0000000"))).toBe(true);
+    expect(page.rows.every((row) => row.cusip.includes("001") || row.ticker.includes("001"))).toBe(true);
+    expect(page.rows.some((row) => !row.cusip.startsWith("001") && !row.ticker.startsWith("001"))).toBe(true);
     expect(page.rows.every((row) => row.creditRating === "AAA")).toBe(true);
-    expect(page.filters).toEqual({ cusip: "0000000", ticker: "0000000", sector: ["Muni", "corp"], creditRating: ["AAA"] });
+    expect(page.filters).toEqual({ cusip: "001", ticker: "001", sector: ["Muni", "corp"], creditRating: ["AAA"] });
   });
 
   it("projects only the requested fields", async () => {

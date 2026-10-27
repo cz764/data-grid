@@ -72,22 +72,6 @@ scripts/
 
 Non-component directories and supporting files use lowercase names. Each React component uses a PascalCase directory matching the exported component name and keeps its implementation and tests together. Styling is Tailwind utilities in JSX; theme tokens live in `src/app/globals.css`.
 
-## Data flow
-
-The Server Component calls the shared query service for the first page and passes it to `BondGrid`. The browser creates new queries and fetches further pages through `/api/v1/grid`, and opens one Server-Sent Events stream for the row IDs in the viewport. On each connect it fetches a snapshot of those rows, then applies pushed `quotes` events whose version is newer than the displayed one. After three failed reconnects it falls back to one-second polling, and the grid eyebrow reads "polling". With Supabase configured, the service creates snapshots in SQL and a separate producer process writes the quotes; otherwise an in-memory store of 50,000 generated bonds plays both roles.
-
-Cells whose value changed since the row was last shown flash in the accent tint; pass `highlightChanges={false}` to disable it.
-
-### DataGrid keyboard
-
-| Key | Behavior |
-| --- | --- |
-| Arrow keys | Move between cells; the header row is reachable with ArrowUp. |
-| Tab / Shift+Tab | Next or previous cell in row-major order; exits the grid at its boundaries. |
-| Enter / Space | Sort the focused sortable header. |
-| Shift+ArrowLeft / Shift+ArrowRight | Resize the focused column. |
-| Home / End | First or last cell in the row; with Ctrl, the first or last row. |
-
 ## Supabase
 
 Without credentials the app runs against an in-memory store with a built-in producer. To run against Supabase:
@@ -111,4 +95,4 @@ Without credentials the app runs against an in-memory store with a built-in prod
 
 The producer updates every row that an open stream subscribes to once per second, plus a random background sample, through the `apply_quote_updates` SQL function. Server processes publish their subscribed IDs to `grid_subscriptions` with a five-second heartbeat. Expired snapshots are deleted when a new snapshot is created; `cleanup_grid_state()` can also be scheduled with pg_cron.
 
-The migrations create `public.bonds` with the agreed constraints plus `version` and `updated_at`, the snapshot tables, the subscriptions table, and the SQL functions. `supabase/seed.sql` uses `generate_series` to insert or refresh 50,000 deterministic synthetic bonds without committing a large fixture file.
+The migrations create `public.bonds` with the agreed constraints plus `version` and `updated_at`, the snapshot tables, the subscriptions table, and the SQL functions. `supabase/seed.sql` uses `generate_series` to insert or refresh 50,000 deterministic synthetic bonds without committing a large fixture file. The CLI runs a seed file once and only records its new hash when the file changes, so after editing the seed re-run it with `supabase db query --linked --file supabase/seed.sql`.

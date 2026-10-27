@@ -15,10 +15,53 @@ const issuers = [
 
 const ratings = ["AAA", "AA+", "AA", "AA-", "A+", "A", "A-", "BBB+"] as const;
 
-const tickers = ["NSMA", "ATLS", "FHLA", "UST", "HARB", "PAR", "RDWD", "CRHS", "MTA", "SUMC"] as const;
+const tickerNames = [
+  "NSMA", "ATLS", "FHLA", "UST", "HARB", "PAR", "RDWD", "CRHS", "MTA", "SUMC",
+  "GLX", "VNTR", "ORCA", "KPLR", "ZEN", "AXIO", "TRBL", "NOVA", "IRIS", "QNT",
+] as const;
 
 function deterministicUuid(index: number) {
   return `b0a00000-0000-4000-8000-${index.toString().padStart(12, "0")}`;
+}
+
+function letter(value: number) {
+  return String.fromCharCode(65 + (value % 26));
+}
+
+// Mirrors supabase/seed.sql: letters rotate through the start, middle, and end of the CUSIP.
+export function mockCusip(index: number) {
+  const digits = String(100000 + index);
+  const letters = letter(index * 7) + letter(index * 11) + letter(index * 17);
+
+  switch (index % 4) {
+    case 0:
+      return letters + digits;
+    case 1:
+      return digits.slice(0, 3) + letters + digits.slice(3);
+    case 2:
+      return digits + letters;
+    default:
+      return digits + String((index * 7) % 1000).padStart(3, "0");
+  }
+}
+
+export function mockTicker(index: number) {
+  const group = ((index - 1) % 1000) + 1;
+  const name = tickerNames[(index - 1) % tickerNames.length];
+
+  if (group <= 250) {
+    return `BND${String(group).padStart(3, "0")}`;
+  }
+
+  if (group <= 500) {
+    return name;
+  }
+
+  if (group <= 750) {
+    return `${name}${25 + (group % 30)}`;
+  }
+
+  return `${letter(group)}${letter(group * 3)}${letter(group * 5)}${group % 10}${letter(group * 7)}`;
 }
 
 export function createMockBonds(count = 20): Bond[] {
@@ -33,8 +76,8 @@ export function createMockBonds(count = 20): Bond[] {
     return {
       id: deterministicUuid(index),
       isin: `US${index.toString().padStart(10, "0")}`,
-      cusip: index.toString().padStart(9, "0"),
-      ticker: tickers[offset % tickers.length],
+      cusip: mockCusip(index),
+      ticker: mockTicker(index),
       issuer: issuers[offset % issuers.length],
       sector: bondSectors[offset % bondSectors.length],
       creditRating: ratings[offset % ratings.length],

@@ -39,7 +39,7 @@ function normalizeStringList(value: unknown, name: string, validate?: (item: str
   return items.length > 0 ? items : undefined;
 }
 
-function normalizePrefix(value: unknown, name: string) {
+function normalizeSearchTerm(value: unknown, name: string) {
   if (value === undefined) {
     return undefined;
   }
@@ -82,8 +82,8 @@ export function normalizeQuery(input: unknown): SnapshotQuery {
       throw new GridError(400, "INVALID_FILTER", "filters must be an object.");
     }
 
-    const cusip = normalizePrefix(request.filters.cusip, "cusip");
-    const ticker = normalizePrefix(request.filters.ticker, "ticker");
+    const cusip = normalizeSearchTerm(request.filters.cusip, "cusip");
+    const ticker = normalizeSearchTerm(request.filters.ticker, "ticker");
     const sector = normalizeStringList(request.filters.sector, "sector", isBondSector);
     const creditRating = normalizeStringList(request.filters.creditRating, "creditRating");
 

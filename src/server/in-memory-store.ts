@@ -24,8 +24,8 @@ function matchesFilters(record: BondRecord, filters: GridFilters) {
 
   if (cusip || ticker) {
     const identifierMatch =
-      (cusip !== undefined && record.cusip.toUpperCase().startsWith(cusip)) ||
-      (ticker !== undefined && record.ticker.toUpperCase().startsWith(ticker));
+      (cusip !== undefined && record.cusip.toUpperCase().includes(cusip)) ||
+      (ticker !== undefined && record.ticker.toUpperCase().includes(ticker));
 
     if (!identifierMatch) {
       return false;
