@@ -86,22 +86,35 @@ const defaultWidth = 150;
 const flashDurationMs = 900;
 
 function flashCell(element: HTMLElement) {
-  if (typeof element.animate !== "function" || window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+  if (
+    typeof element.animate !== "function" ||
+    window.matchMedia("(prefers-reduced-motion: reduce)").matches
+  ) {
     return;
   }
 
-  const accent = getComputedStyle(element).getPropertyValue("--color-accent").trim() || "#255be3";
+  const accent =
+    getComputedStyle(element).getPropertyValue("--color-accent").trim() ||
+    "#255be3";
 
   element.animate(
-    [{ backgroundColor: `color-mix(in srgb, ${accent} 24%, transparent)` }, { backgroundColor: "transparent" }],
+    [
+      { backgroundColor: `color-mix(in srgb, ${accent} 24%, transparent)` },
+      { backgroundColor: "transparent" },
+    ],
     { duration: flashDurationMs, easing: "ease-out" },
   );
 }
 
-const alignClass = { start: "text-left", center: "text-center", end: "text-right tabular-nums" } as const;
+const alignClass = {
+  start: "text-left",
+  center: "text-center",
+  end: "text-right tabular-nums",
+} as const;
 const cellBase =
   "h-11 overflow-hidden border-b border-border-subtle px-4 align-middle text-[0.85rem] text-ink text-ellipsis whitespace-nowrap focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent max-sm:px-3";
-const stickyFirstColumn = "sticky left-0 z-[1] shadow-[1px_0_0_var(--color-border)]";
+const stickyFirstColumn =
+  "sticky left-0 z-[1] shadow-[1px_0_0_var(--color-border)]";
 const buttonClass =
   "cursor-pointer rounded-full border border-border bg-surface px-4 py-2 text-xs font-semibold text-ink transition-colors hover:border-accent-soft hover:bg-row-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent";
 const footerClass =
@@ -151,7 +164,10 @@ export function DataGrid<T extends object>({
   const titleId = `${gridId}-title`;
   const viewportRef = useRef<HTMLDivElement>(null);
   const [columnSizing, setColumnSizing] = useState<ColumnSizingState>({});
-  const [activeCell, setActiveCell] = useState<CellPosition>({ row: headerRow, column: 0 });
+  const [activeCell, setActiveCell] = useState<CellPosition>({
+    row: headerRow,
+    column: 0,
+  });
   const pendingFocus = useRef(false);
   const suppressHeaderClick = useRef(false);
 
@@ -192,7 +208,10 @@ export function DataGrid<T extends object>({
   const virtualRows = virtualizer.getVirtualItems();
   const totalSize = virtualizer.getTotalSize();
   const paddingTop = virtualRows[0]?.start ?? 0;
-  const paddingBottom = virtualRows.length > 0 ? totalSize - virtualRows[virtualRows.length - 1].end : 0;
+  const paddingBottom =
+    virtualRows.length > 0
+      ? totalSize - virtualRows[virtualRows.length - 1].end
+      : 0;
   const firstMounted = virtualRows[0]?.index ?? -1;
   const lastMounted = virtualRows[virtualRows.length - 1]?.index ?? -1;
 
@@ -218,7 +237,8 @@ export function DataGrid<T extends object>({
   const requestedLoadForLength = useRef(-1);
 
   useEffect(() => {
-    const nearEnd = rows.length > 0 && lastMounted >= rows.length - autoLoadThreshold;
+    const nearEnd =
+      rows.length > 0 && lastMounted >= rows.length - autoLoadThreshold;
 
     if (
       autoLoadMore &&
@@ -233,7 +253,16 @@ export function DataGrid<T extends object>({
       requestedLoadForLength.current = rows.length;
       onLoadMore();
     }
-  }, [autoLoadMore, hasMore, isLoading, isRefreshing, error, rows.length, lastMounted, onLoadMore]);
+  }, [
+    autoLoadMore,
+    hasMore,
+    isLoading,
+    isRefreshing,
+    error,
+    rows.length,
+    lastMounted,
+    onLoadMore,
+  ]);
 
   const lastSeenValues = useRef(new Map<string, Record<string, unknown>>());
 
@@ -251,7 +280,11 @@ export function DataGrid<T extends object>({
         const value = row.original[column.key];
         current[column.key] = value;
 
-        if (highlightChanges && previous && !Object.is(previous[column.key], value)) {
+        if (
+          highlightChanges &&
+          previous &&
+          !Object.is(previous[column.key], value)
+        ) {
           const cell = viewportRef.current?.querySelector<HTMLElement>(
             `[data-grid-row="${virtualRow.index}"][data-grid-column="${columnIndex}"]`,
           );
@@ -319,7 +352,8 @@ export function DataGrid<T extends object>({
         return;
       }
 
-      const direction: SortDirection = sort?.key === column.key && sort.direction === "asc" ? "desc" : "asc";
+      const direction: SortDirection =
+        sort?.key === column.key && sort.direction === "asc" ? "desc" : "asc";
 
       onSortChange({ key: column.key, direction });
     },
@@ -332,23 +366,34 @@ export function DataGrid<T extends object>({
     return (event: MouseEvent | TouchEvent) => {
       // A drag released over the header would otherwise register as a sort click.
       suppressHeaderClick.current = true;
-      const release = () => setTimeout(() => (suppressHeaderClick.current = false), 0);
+      const release = () =>
+        setTimeout(() => (suppressHeaderClick.current = false), 0);
       window.addEventListener("mouseup", release, { once: true });
       window.addEventListener("touchend", release, { once: true });
       handler(event);
     };
   };
 
-  const resizeColumn = useCallback((header: Header<T, unknown>, delta: number) => {
-    const next = Math.min(
-      header.column.columnDef.maxSize ?? Number.MAX_SAFE_INTEGER,
-      Math.max(header.column.columnDef.minSize ?? 0, header.getSize() + delta),
-    );
+  const resizeColumn = useCallback(
+    (header: Header<T, unknown>, delta: number) => {
+      const next = Math.min(
+        header.column.columnDef.maxSize ?? Number.MAX_SAFE_INTEGER,
+        Math.max(
+          header.column.columnDef.minSize ?? 0,
+          header.getSize() + delta,
+        ),
+      );
 
-    setColumnSizing((sizing) => ({ ...sizing, [header.column.id]: next }));
-  }, []);
+      setColumnSizing((sizing) => ({ ...sizing, [header.column.id]: next }));
+    },
+    [],
+  );
 
-  const handleKeyDown = (event: KeyboardEvent<HTMLElement>, position: CellPosition, header?: Header<T, unknown>) => {
+  const handleKeyDown = (
+    event: KeyboardEvent<HTMLElement>,
+    position: CellPosition,
+    header?: Header<T, unknown>,
+  ) => {
     if (event.target !== event.currentTarget) {
       return;
     }
@@ -381,7 +426,10 @@ export function DataGrid<T extends object>({
         focusCell({ row: event.ctrlKey ? headerRow : position.row, column: 0 });
         break;
       case "End":
-        focusCell({ row: event.ctrlKey ? lastRow : position.row, column: lastColumn });
+        focusCell({
+          row: event.ctrlKey ? lastRow : position.row,
+          column: lastColumn,
+        });
         break;
       case "Tab": {
         const next = event.shiftKey
@@ -439,24 +487,39 @@ export function DataGrid<T extends object>({
       <div className="flex items-end justify-between gap-6 px-6 pt-5 pb-4 max-sm:items-start max-sm:px-4 max-sm:pt-4 max-sm:pb-3">
         <div>
           {eyebrow ? (
-            <p className="mb-1 text-[0.72rem] font-extrabold tracking-[0.12em] text-accent uppercase">{eyebrow}</p>
+            <p className="mb-1 text-[0.72rem] font-extrabold tracking-[0.12em] text-accent uppercase">
+              {eyebrow}
+            </p>
           ) : null}
-          <h2 className="m-0 text-[clamp(1.05rem,3vw,1.35rem)] font-semibold tracking-tight text-ink" id={titleId}>
+          <h2
+            className="m-0 text-[clamp(1.05rem,3vw,1.35rem)] font-semibold tracking-tight text-ink"
+            id={titleId}
+          >
             {name}
           </h2>
         </div>
-        <span className="flex-none text-xs text-muted tabular-nums" aria-live="polite">
+        <span
+          className="flex-none text-xs text-muted tabular-nums"
+          aria-live="polite"
+        >
           {countLabel}
         </span>
       </div>
 
-      {toolbar ? <div className="px-6 pb-4 max-sm:px-4 max-sm:pb-3.5">{toolbar}</div> : null}
+      {toolbar ? (
+        <div className="px-6 pb-4 max-sm:px-4 max-sm:pb-3.5">{toolbar}</div>
+      ) : null}
 
       {isInitialLoading ? (
         <DataGridSkeleton label={`Loading ${name}`} showHeading={false} />
       ) : isInitialError ? (
-        <div className="grid justify-items-center gap-3.5 border-t border-border px-6 py-14 text-center" role="alert">
-          <p className="m-0 text-muted-strong">{error?.message ?? "Something went wrong."}</p>
+        <div
+          className="grid justify-items-center gap-3.5 border-t border-border px-6 py-14 text-center"
+          role="alert"
+        >
+          <p className="m-0 text-muted-strong">
+            {error?.message ?? "Something went wrong."}
+          </p>
           {onRetry ? (
             <button type="button" className={buttonClass} onClick={onRetry}>
               Retry
@@ -490,11 +553,14 @@ export function DataGrid<T extends object>({
                 {table.getHeaderGroups().map((headerGroup) => (
                   <tr key={headerGroup.id} role="row" aria-rowindex={1}>
                     {headerGroup.headers.map((header, columnIndex) => {
-                      const column = header.column.columnDef.meta as DataGridColumn<T>;
+                      const column = header.column.columnDef
+                        .meta as DataGridColumn<T>;
                       const isSorted = sort?.key === column.key;
                       const isResizing = header.column.getIsResizing();
                       const position = { row: headerRow, column: columnIndex };
-                      const isActive = activeCell.row === headerRow && activeCell.column === columnIndex;
+                      const isActive =
+                        activeCell.row === headerRow &&
+                        activeCell.column === columnIndex;
 
                       return (
                         <th
@@ -518,7 +584,8 @@ export function DataGrid<T extends object>({
                             alignClass[column.align ?? "start"],
                             "sticky top-0 z-[2] bg-surface-strong text-[0.72rem] font-bold tracking-[0.06em] text-muted-strong uppercase select-none",
                             columnIndex === 0 && cx(stickyFirstColumn, "z-[3]"),
-                            column.sortable && "cursor-pointer hover:text-accent-strong",
+                            column.sortable &&
+                              "cursor-pointer hover:text-accent-strong",
                             isSorted && "text-accent",
                           )}
                           tabIndex={isActive ? 0 : -1}
@@ -530,18 +597,30 @@ export function DataGrid<T extends object>({
                             }
                           }}
                           onFocus={() => setActiveCell(position)}
-                          onKeyDown={(event) => handleKeyDown(event, position, header)}
+                          onKeyDown={(event) =>
+                            handleKeyDown(event, position, header)
+                          }
                         >
                           <span className="inline-flex max-w-full items-center gap-1.5">
                             <span className="overflow-hidden text-ellipsis">
-                              {flexRender(header.column.columnDef.header, header.getContext())}
+                              {flexRender(
+                                header.column.columnDef.header,
+                                header.getContext(),
+                              )}
                             </span>
                             {column.sortable ? (
                               <span
-                                className={cx("flex-none text-[0.65rem]", isSorted ? "opacity-100" : "opacity-45")}
+                                className={cx(
+                                  "flex-none text-[0.65rem]",
+                                  isSorted ? "opacity-100" : "opacity-45",
+                                )}
                                 aria-hidden="true"
                               >
-                                {isSorted ? (sort.direction === "asc" ? "▲" : "▼") : "⇅"}
+                                {isSorted
+                                  ? sort.direction === "asc"
+                                    ? "▲"
+                                    : "▼"
+                                  : "⇅"}
                               </span>
                             ) : null}
                           </span>
@@ -565,7 +644,11 @@ export function DataGrid<T extends object>({
               <tbody>
                 {showEmpty ? (
                   <tr role="row" aria-rowindex={2}>
-                    <td className="h-[180px] text-center text-muted" role="gridcell" colSpan={columns.length}>
+                    <td
+                      className="h-[180px] text-center text-muted"
+                      role="gridcell"
+                      colSpan={columns.length}
+                    >
                       {emptyMessage}
                     </td>
                   </tr>
@@ -588,11 +671,20 @@ export function DataGrid<T extends object>({
                       style={{ height: virtualRow.size }}
                     >
                       {row.getVisibleCells().map((cell, columnIndex) => {
-                        const column = cell.column.columnDef.meta as DataGridColumn<T>;
+                        const column = cell.column.columnDef
+                          .meta as DataGridColumn<T>;
                         const value = row.original[column.key];
-                        const position = { row: virtualRow.index, column: columnIndex };
-                        const isActive = activeCell.row === virtualRow.index && activeCell.column === columnIndex;
-                        const text = value === null || value === undefined ? "" : String(value);
+                        const position = {
+                          row: virtualRow.index,
+                          column: columnIndex,
+                        };
+                        const isActive =
+                          activeCell.row === virtualRow.index &&
+                          activeCell.column === columnIndex;
+                        const text =
+                          value === null || value === undefined
+                            ? ""
+                            : String(value);
 
                         return (
                           <td
@@ -611,9 +703,13 @@ export function DataGrid<T extends object>({
                             data-grid-row={virtualRow.index}
                             data-grid-column={columnIndex}
                             onFocus={() => setActiveCell(position)}
-                            onKeyDown={(event) => handleKeyDown(event, position)}
+                            onKeyDown={(event) =>
+                              handleKeyDown(event, position)
+                            }
                           >
-                            {column.renderCell ? column.renderCell(value, row.original) : text}
+                            {column.renderCell
+                              ? column.renderCell(value, row.original)
+                              : text}
                           </td>
                         );
                       })}
@@ -665,7 +761,15 @@ interface DataGridFooterProps {
   onRetry?: () => void;
 }
 
-function DataGridFooter({ rowCount, isLoading, error, hasMore, autoLoadMore, onLoadMore, onRetry }: DataGridFooterProps) {
+function DataGridFooter({
+  rowCount,
+  isLoading,
+  error,
+  hasMore,
+  autoLoadMore,
+  onLoadMore,
+  onRetry,
+}: DataGridFooterProps) {
   if (rowCount === 0) {
     return null;
   }

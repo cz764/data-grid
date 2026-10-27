@@ -19,3 +19,6 @@
 *.log
 .DS_Store
 *.tsbuildinfo
+
+# Ignore all VS Code local workspace settings by default
+.vscode/*
