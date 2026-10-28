@@ -23,6 +23,43 @@ class TestRegistry {
   }
 }
 
+const query = {
+  sort: { field: "ticker", direction: "asc" },
+  filters: {},
+  fields: ["cusip", "bid"],
+  pageSize: 100,
+} as const;
+
+describe("InMemoryBondStore snapshots", () => {
+  it("reuses a snapshot for the same fingerprint while at least half its lifetime remains", async () => {
+    vi.useFakeTimers();
+    const store = new InMemoryBondStore(new TestRegistry(), 200);
+
+    const first = await store.createSnapshot(query, "fp", 900_000);
+    vi.advanceTimersByTime(449_000);
+    const second = await store.createSnapshot(query, "fp", 900_000);
+    const other = await store.createSnapshot(query, "other", 900_000);
+
+    expect(second).toEqual(first);
+    expect(other.id).not.toBe(first.id);
+    vi.useRealTimers();
+  });
+
+  it("creates a new snapshot once less than half the lifetime remains", async () => {
+    vi.useFakeTimers();
+    const store = new InMemoryBondStore(new TestRegistry(), 200);
+
+    const first = await store.createSnapshot(query, "fp", 900_000);
+    vi.advanceTimersByTime(451_000);
+    const second = await store.createSnapshot(query, "fp", 900_000);
+
+    expect(second.id).not.toBe(first.id);
+    expect(new Date(second.expiresAt).getTime()).toBeGreaterThan(new Date(first.expiresAt).getTime());
+    expect(await store.getSnapshot(first.id)).not.toBeNull();
+    vi.useRealTimers();
+  });
+});
+
 describe("InMemoryBondStore producer", () => {
   it("updates every subscribed bond on each tick plus a background sample", async () => {
     const registry = new TestRegistry();

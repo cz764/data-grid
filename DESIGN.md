@@ -185,6 +185,8 @@ Create the ordered entries from one consistent database transaction, with `id` a
 
 A starting snapshot lifetime of 15 minutes is sufficient for the demo. Expired snapshots are deleted by scheduled cleanup. At 50,000 rows, snapshot creation and storage must be benchmarked because each new sort or filter stores 50,000 ordered identities in the worst case.
 
+Identical queries share a snapshot. `query_hash` fingerprints sort, filters, fields, and page size, and the order is immutable, so a new query reuses the newest snapshot with that hash while at least half its lifetime remains. The half-life rule bounds two things: a reused cursor keeps at least 7.5 minutes before `SNAPSHOT_EXPIRED`, and a fresh query never starts from an order older than 7.5 minutes. Concurrent requests for the same hash serialize on an advisory lock so only the first materializes the entries. Without reuse, every page load and every sort change wrote a full 50,000-row membership, which made `grid_snapshot_entries` grow by roughly a page-load count times 50,000 rows every 15 minutes.
+
 ### 4.4 Mock quote producer
 
 The producer runs independently of browser requests but follows the audience. Each second it updates every bond that any open stream subscribes to, plus a small background sample of unsubscribed bonds (initially 10 per second) so sorted orders still drift over time. Each update changes bid and ask together, preserves a valid spread, and is persisted to Supabase in one statement before the stream tier reads it.

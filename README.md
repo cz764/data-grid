@@ -93,6 +93,6 @@ Without credentials the app runs against an in-memory store with a built-in prod
    npm run producer
    ```
 
-The producer updates every row that an open stream subscribes to once per second, plus a random background sample, through the `apply_quote_updates` SQL function. Server processes publish their subscribed IDs to `grid_subscriptions` with a five-second heartbeat. Expired snapshots are deleted when a new snapshot is created; `cleanup_grid_state()` can also be scheduled with pg_cron.
+The producer updates every row that an open stream subscribes to once per second, plus a random background sample, through the `apply_quote_updates` SQL function. Server processes publish their subscribed IDs to `grid_subscriptions` with a five-second heartbeat. Identical queries reuse a snapshot while at least half its lifetime remains, and expired snapshots are deleted when a new snapshot is created; `cleanup_grid_state()` can also be scheduled with pg_cron.
 
 The migrations create `public.bonds` with the agreed constraints plus `version` and `updated_at`, the snapshot tables, the subscriptions table, and the SQL functions. `supabase/seed.sql` uses `generate_series` to insert or refresh 50,000 deterministic synthetic bonds without committing a large fixture file. The CLI runs a seed file once and only records its new hash when the file changes, so after editing the seed re-run it with `supabase db query --linked --file supabase/seed.sql`.

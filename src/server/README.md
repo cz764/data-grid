@@ -4,7 +4,7 @@ Server-only data access and the shared grid query service.
 
 - `bond-store.ts` — the `BondStore` interface (snapshot creation, page reads by ordinal, rows by ID) and `getBondStore()`, which returns the Supabase store when `SUPABASE_URL` and `SUPABASE_SECRET_KEY` are set and the in-memory store otherwise.
 - `in-memory-store.ts` — generates 50,000 deterministic bonds, keeps snapshots in process, and runs the mock producer: every subscribed bond updates once per second plus a background sample of ten.
-- `supabase-store.ts` — the same interface over Supabase: `create_grid_snapshot` builds the ordered membership in SQL, pages join `grid_snapshot_entries` to `bonds`, and current rows are read by ID.
+- `supabase-store.ts` — the same interface over Supabase: `create_grid_snapshot` reuses a fresh snapshot with the same query hash or builds the ordered membership in SQL, pages join `grid_snapshot_entries` to `bonds`, and current rows are read by ID.
 - `supabase.ts` — server-only client factory and the configuration check.
 - `supabase-subscriptions.ts` — heartbeat that publishes this process's subscribed row IDs to `grid_subscriptions` so the external producer (`scripts/producer.ts`) can follow the audience.
 - `quotes.ts` — the bid/ask random walk shared by the in-memory producer and the Supabase producer script.

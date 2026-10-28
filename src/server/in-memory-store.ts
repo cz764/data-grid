@@ -84,6 +84,12 @@ export class InMemoryBondStore implements BondStore {
   async createSnapshot(query: SnapshotQuery, queryFingerprint: string, ttlMs: number): Promise<SnapshotInfo> {
     this.purgeExpiredSnapshots();
 
+    const reusable = this.findReusableSnapshot(queryFingerprint, ttlMs);
+
+    if (reusable) {
+      return this.describe(reusable);
+    }
+
     const orderedIds = this.list()
       .filter((record) => matchesFilters(record, query.filters))
       .sort(compareRecords(query.sort))
@@ -177,6 +183,19 @@ export class InMemoryBondStore implements BondStore {
 
   private describe({ id, queryFingerprint, expiresAt, totalCount, query }: StoredSnapshot): SnapshotInfo {
     return { id, queryFingerprint, expiresAt, totalCount, query };
+  }
+
+  // Same rule as create_grid_snapshot: share a snapshot only while at least half its lifetime remains.
+  private findReusableSnapshot(queryFingerprint: string, ttlMs: number) {
+    const minimumExpiry = Date.now() + ttlMs / 2;
+
+    for (const snapshot of this.snapshots.values()) {
+      if (snapshot.queryFingerprint === queryFingerprint && new Date(snapshot.expiresAt).getTime() >= minimumExpiry) {
+        return snapshot;
+      }
+    }
+
+    return null;
   }
 
   private purgeExpiredSnapshots() {
